@@ -1,25 +1,33 @@
 
 # DevSecOps CI/CD Pipeline — Example Voting App
 
-## Overview
+## 📌 Overview
 
-A complete DevSecOps pipeline deploying a microservices-based voting application on AWS EC2 using industry-standard tools.
+This project demonstrates a complete **DevSecOps CI/CD pipeline** deploying a microservices-based voting application on AWS using Terraform, Ansible, Kubernetes (MicroK8s), GitHub Actions, and ArgoCD.
 
-## Application Architecture
+---
 
-The voting app consists of 5 microservices:
+## 🏗️ Application Architecture
 
-- **vote** — Python Flask frontend for casting votes
+The system consists of **5 microservices**:
 
-- **result** — Node.js frontend showing real-time results  
+| Service | Description |
 
-- **worker** — .NET service processing votes from Redis to Postgres
+|---------|-------------|
 
-- **redis** — Message queue for incoming votes
+| `vote` | Python Flask frontend for voting |
 
-- **postgres** — Persistent database for vote storage
+| `result` | Node.js frontend showing results |
 
-## Tech Stack
+| `worker` | .NET service processing votes |
+
+| `redis` | Message queue |
+
+| `postgres` | Database for persistent storage |
+
+---
+
+## 🧰 Tech Stack
 
 | Layer | Tool |
 
@@ -27,47 +35,77 @@ The voting app consists of 5 microservices:
 
 | Containerization | Docker |
 
-| Infrastructure | Terraform |
+| Infrastructure as Code | Terraform |
 
-| Configuration | Ansible |
+| Configuration Management | Ansible |
 
-| Orchestration | Kubernetes (microk8s) |
+| Orchestration | Kubernetes (MicroK8s) |
 
-| CI Pipeline | GitHub Actions |
+| CI/CD Pipeline | GitHub Actions |
 
-| CD Pipeline | ArgoCD |
+| CD Tool | ArgoCD |
 
 | Security Scanning | Trivy + OWASP Dependency Check |
 
-| Cloud | AWS EC2 (us-east-1) |
+| Cloud Provider | AWS EC2 (Ubuntu 22.04) |
 
-## Repository Structure├── vote/ # Python voting app + Dockerfile ├── result/ # Node.js results app + Dockerfile├── worker/ # .NET worker service + Dockerfile ├── terraform/ # AWS infrastructure as code │ ├── main.tf # VPC, subnet, security group, EC2 │ ├── variables.tf # Instance type, region, AMI │ └── outputs.tf # Public IP and DNS outputs ├── ansible/ # Configuration management │ ├── inventory.ini # EC2 host configuration │ └── setup.yml # microk8s installation playbook ├── kubernetes/ # Kubernetes manifests │ ├── vote-deployment.yaml │ ├── result-deployment.yaml │ ├── worker-deployment.yaml │ ├── redis-deployment.yaml │ └── db-deployment.yaml ├── argocd/ # ArgoCD CD configuration │ └── application.yaml # Auto-sync application manifest └── .github/workflows/ # CI/CD pipeline └── ci.yml # Build, scan, push, update manifests## Deployment Guide
+---
 
-### Prerequisites
-
-```bash
-
-# Required tools
-
-terraform --version    # v1.7.5+
-
-ansible --version      # v2.20+
-
-docker --version       # v27+
-
-aws --version          # v2.34+
-
-kubectl version --client
-
-# Configure AWS
-
-aws configure
-
-# Enter: Access Key, Secret Key, region: us-east-1
+## 📁 Repository Structure
 
 ```
 
-### Phase 1 — Create AWS Key Pair
+vote/              → Flask voting app
+
+result/            → Node.js results app
+
+worker/            → .NET worker service
+
+terraform/         → AWS infrastructure (VPC, EC2, SG)
+
+ansible/           → EC2 configuration + MicroK8s setup
+
+kubernetes/        → Kubernetes manifests
+
+argocd/            → ArgoCD application manifest
+
+.github/workflows/ → CI/CD pipeline
+
+```
+
+---
+
+## 🚀 Deployment Steps
+
+### 1️⃣ Prerequisites
+
+Install the required tools:
+
+```bash
+
+terraform --version
+
+ansible --version
+
+docker --version
+
+aws --version
+
+kubectl version --client
+
+```
+
+Configure AWS CLI:
+
+```bash
+
+aws configure
+
+```
+
+---
+
+### 2️⃣ Create Key Pair
 
 ```bash
 
@@ -83,7 +121,9 @@ chmod 400 ~/.ssh/devops-key.pem
 
 ```
 
-### Phase 2 — Provision Infrastructure (Terraform)
+---
+
+### 3️⃣ Provision Infrastructure (Terraform)
 
 ```bash
 
@@ -91,29 +131,27 @@ cd terraform/
 
 terraform init
 
-terraform plan
-
 terraform apply
-
-# Note the output public IP
 
 ```
 
-Resources created:
+**Creates:**
 
-- VPC with CIDR 10.0.0.0/16
+- VPC + Subnet
 
-- Public subnet + Internet Gateway
+- Internet Gateway
 
-- Security Group (ports 22, 8080, 30080, 31000, 31001)
+- Security Groups
 
-- EC2 t3.micro instance (Ubuntu 22.04)
+- EC2 instance (t3.micro)
 
-### Phase 3 — Configure EC2 (Ansible)
+---
+
+### 4️⃣ Configure EC2 (Ansible)
+
+Update `inventory.ini` with your EC2 IP, then run:
 
 ```bash
-
-# Update inventory.ini with your EC2 IP
 
 cd ansible/
 
@@ -123,25 +161,37 @@ ansible-playbook -i inventory.ini setup.yml
 
 ```
 
-Ansible installs:
+**Installs:**
 
 - Docker
 
-- microk8s (Kubernetes)
+- MicroK8s
 
-- Enables dns, storage, ingress addons
+- Kubernetes addons (DNS, ingress, storage)
 
-### Phase 4 — Kubernetes Manifests
+---
+
+### 5️⃣ Deploy Kubernetes Manifests
+
+Copy files to EC2:
 
 ```bash
 
-# Copy manifests to EC2
-
 scp -i ~/.ssh/devops-key.pem kubernetes/*.yaml ubuntu@<EC2-IP>:~/
 
-# SSH and apply
+```
+
+SSH into EC2:
+
+```bash
 
 ssh -i ~/.ssh/devops-key.pem ubuntu@<EC2-IP>
+
+```
+
+Apply manifests:
+
+```bash
 
 sudo microk8s kubectl apply -f ~/
 
@@ -149,51 +199,69 @@ sudo microk8s kubectl get pods
 
 ```
 
-### Phase 5 — CI/CD Pipeline
+---
 
-#### GitHub Actions (CI)
+### 6️⃣ CI/CD Pipeline (GitHub Actions)
 
-Triggers automatically on every push to main branch:
+Triggers automatically on every push to `main`:
 
-1. **Security Scan** — Trivy filesystem scan + OWASP dependency check
+1. Trivy filesystem scan
 
-2. **Build Vote Image** — Docker build + push + Trivy image scan
+2. OWASP Dependency Check
 
-3. **Build Result Image** — Docker build + push + Trivy image scan  
+3. Build Docker images
 
-4. **Build Worker Image** — Docker build + push + Trivy image scan
+4. Push images to Docker Hub
 
-5. **Update Manifests** — Updates image tags in kubernetes/ folder
+5. Update Kubernetes manifests
 
-Required GitHub Secrets:
+**Required GitHub Secrets:**
 
-- `DOCKERHUB_USERNAME` — Docker Hub username
+| Secret | Description |
 
-- `DOCKERHUB_TOKEN` — Docker Hub access token (Read & Write)
+|--------|-------------|
 
-#### ArgoCD (CD)
+| `DOCKERHUB_USERNAME` | Docker Hub username |
+
+| `DOCKERHUB_TOKEN` | Docker Hub access token |
+
+---
+
+### 7️⃣ ArgoCD Deployment
+
+**Install ArgoCD:**
 
 ```bash
-
-# On EC2 — download and install ArgoCD
 
 curl -L -o argo.yaml https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
 
 sudo microk8s kubectl create namespace argocd
 
-sudo microk8s kubectl apply -n argocd -f argo.yaml --request-timeout=300s
+sudo microk8s kubectl apply -n argocd -f argo.yaml
 
-# Expose ArgoCD UI
+```
+
+**Expose the UI:**
+
+```bash
 
 sudo microk8s kubectl patch svc argocd-server -n argocd \
 
-  -p '{"spec":{"type":"NodePort","ports":[{"port":80,"targetPort":8080,"nodePort":30080,"protocol":"TCP","name":"http"}]}}'
+  -p '{"spec":{"type":"NodePort","ports":[{"port":80,"targetPort":8080,"nodePort":30080,"name":"http"}]}}'
 
-# Apply voting app to ArgoCD
+```
+
+**Apply application manifest:**
+
+```bash
 
 sudo microk8s kubectl apply -f argocd/application.yaml
 
-# Get admin password
+```
+
+**Get admin password:**
+
+```bash
 
 sudo microk8s kubectl -n argocd get secret argocd-initial-admin-secret \
 
@@ -201,53 +269,55 @@ sudo microk8s kubectl -n argocd get secret argocd-initial-admin-secret \
 
 ```
 
-Access ArgoCD UI: `http://<EC2-IP>:30080`
+---
 
-- Username: `admin`
+## 🌐 Application Access
 
-- Password: from command above
+| Service | URL |
 
-ArgoCD auto-syncs kubernetes/ folder from GitHub on every commit.
+|---------|-----|
 
-## Security Tools
+| Vote App | `http://<EC2-IP>:31000` |
 
-| Tool | Stage | Purpose |
+| Result App | `http://<EC2-IP>:31001` |
 
-|------|-------|---------|
+| ArgoCD UI | `http://<EC2-IP>:30080` |
 
-| Trivy | CI | Container image + filesystem vulnerability scanning |
+---
 
-| OWASP Dependency Check | CI | Known CVE scanning in dependencies |
+## 🔐 Security Tools
 
-| GitHub Actions Gates | CI | Blocks deployment if critical vulnerabilities found |
+| Tool | Purpose |
 
-## Application Access
+|------|---------|
 
-After deployment:
+| **Trivy** | Container vulnerability scanning |
 
-- **Vote App**: `http://<EC2-IP>:31000`
+| **OWASP Dependency Check** | Library CVE scanning |
 
-- **Result App**: `http://<EC2-IP>:31001`
+| **GitHub Actions** | CI security gates |
 
-- **ArgoCD UI**: `http://<EC2-IP>:30080`
+---
 
-## Infrastructure Notes
+## ⚠️ Notes
 
-> The project uses AWS free tier (t3.micro, 1GB RAM). microk8s requires
+- This project runs on the **AWS Free Tier** (t3.micro).
 
-> minimum 2GB RAM for stable operation with ArgoCD. A 2GB swap file
+- Due to limited RAM, MicroK8s + ArgoCD may require **swap memory** and occasional restarts.
 
-> is added to compensate for memory constraints.
+---
 
-## Cleanup — Important!
+## 🧹 Cleanup
+
+To destroy all provisioned AWS infrastructure:
 
 ```bash
-
-# Destroy all AWS resources to avoid charges
 
 cd terraform/
 
 terraform destroy
 
 ```
+
+---
 
