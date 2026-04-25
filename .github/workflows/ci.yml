@@ -5,7 +5,8 @@ on:
     branches: [ main ]
   pull_request:
     branches: [ main ]
-
+permissions:
+  contents: write
 env:
   DOCKERHUB_USERNAME: 22i1269xx
 
