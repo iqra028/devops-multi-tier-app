@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
       - name: vote
-        image: 22i1269xx/vote:a959199a0c8b287c6828cd87ae620cf38c893df1
+        image: 22i1269xx/vote:b331744a341e0c3d344b6ae14b9707506069766d
         ports:
         - containerPort: 80
         env:

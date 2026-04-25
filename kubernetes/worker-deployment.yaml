@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
       - name: worker
-        image: 22i1269xx/worker:a959199a0c8b287c6828cd87ae620cf38c893df1
+        image: 22i1269xx/worker:b331744a341e0c3d344b6ae14b9707506069766d
         env:
         - name: REDIS_HOST
           value: "redis"
