@@ -1,65 +1,253 @@
-# Example Voting App
 
-A simple distributed application running across multiple Docker containers.
+# DevSecOps CI/CD Pipeline — Example Voting App
 
-## Getting started
+## Overview
 
-Download [Docker Desktop](https://www.docker.com/products/docker-desktop) for Mac or Windows. [Docker Compose](https://docs.docker.com/compose) will be automatically installed. On Linux, make sure you have the latest version of [Compose](https://docs.docker.com/compose/install/).
+A complete DevSecOps pipeline deploying a microservices-based voting application on AWS EC2 using industry-standard tools.
 
-This solution uses Python, Node.js, .NET, with Redis for messaging and Postgres for storage.
+## Application Architecture
 
-Run in this directory to build and run the app:
+The voting app consists of 5 microservices:
 
-```shell
-docker compose up
+- **vote** — Python Flask frontend for casting votes
+
+- **result** — Node.js frontend showing real-time results  
+
+- **worker** — .NET service processing votes from Redis to Postgres
+
+- **redis** — Message queue for incoming votes
+
+- **postgres** — Persistent database for vote storage
+
+## Tech Stack
+
+| Layer | Tool |
+
+|-------|------|
+
+| Containerization | Docker |
+
+| Infrastructure | Terraform |
+
+| Configuration | Ansible |
+
+| Orchestration | Kubernetes (microk8s) |
+
+| CI Pipeline | GitHub Actions |
+
+| CD Pipeline | ArgoCD |
+
+| Security Scanning | Trivy + OWASP Dependency Check |
+
+| Cloud | AWS EC2 (us-east-1) |
+
+## Repository Structure├── vote/ # Python voting app + Dockerfile ├── result/ # Node.js results app + Dockerfile├── worker/ # .NET worker service + Dockerfile ├── terraform/ # AWS infrastructure as code │ ├── main.tf # VPC, subnet, security group, EC2 │ ├── variables.tf # Instance type, region, AMI │ └── outputs.tf # Public IP and DNS outputs ├── ansible/ # Configuration management │ ├── inventory.ini # EC2 host configuration │ └── setup.yml # microk8s installation playbook ├── kubernetes/ # Kubernetes manifests │ ├── vote-deployment.yaml │ ├── result-deployment.yaml │ ├── worker-deployment.yaml │ ├── redis-deployment.yaml │ └── db-deployment.yaml ├── argocd/ # ArgoCD CD configuration │ └── application.yaml # Auto-sync application manifest └── .github/workflows/ # CI/CD pipeline └── ci.yml # Build, scan, push, update manifests## Deployment Guide
+
+### Prerequisites
+
+```bash
+
+# Required tools
+
+terraform --version    # v1.7.5+
+
+ansible --version      # v2.20+
+
+docker --version       # v27+
+
+aws --version          # v2.34+
+
+kubectl version --client
+
+# Configure AWS
+
+aws configure
+
+# Enter: Access Key, Secret Key, region: us-east-1
+
 ```
 
-The `vote` app will be running at [http://localhost:8080](http://localhost:8080), and the `results` will be at [http://localhost:8081](http://localhost:8081).
+### Phase 1 — Create AWS Key Pair
 
-Alternately, if you want to run it on a [Docker Swarm](https://docs.docker.com/engine/swarm/), first make sure you have a swarm. If you don't, run:
+```bash
 
-```shell
-docker swarm init
+aws ec2 create-key-pair \
+
+  --key-name devops-key \
+
+  --query 'KeyMaterial' \
+
+  --output text > ~/.ssh/devops-key.pem
+
+chmod 400 ~/.ssh/devops-key.pem
+
 ```
 
-Once you have your swarm, in this directory run:
+### Phase 2 — Provision Infrastructure (Terraform)
 
-```shell
-docker stack deploy --compose-file docker-stack.yml vote
+```bash
+
+cd terraform/
+
+terraform init
+
+terraform plan
+
+terraform apply
+
+# Note the output public IP
+
 ```
 
-## Run the app in Kubernetes
+Resources created:
 
-The folder k8s-specifications contains the YAML specifications of the Voting App's services.
+- VPC with CIDR 10.0.0.0/16
 
-Run the following command to create the deployments and services. Note it will create these resources in your current namespace (`default` if you haven't changed it.)
+- Public subnet + Internet Gateway
 
-```shell
-kubectl create -f k8s-specifications/
+- Security Group (ports 22, 8080, 30080, 31000, 31001)
+
+- EC2 t3.micro instance (Ubuntu 22.04)
+
+### Phase 3 — Configure EC2 (Ansible)
+
+```bash
+
+# Update inventory.ini with your EC2 IP
+
+cd ansible/
+
+ansible -i inventory.ini voting_app -m ping
+
+ansible-playbook -i inventory.ini setup.yml
+
 ```
 
-The `vote` web app is then available on port 31000 on each host of the cluster, the `result` web app is available on port 31001.
+Ansible installs:
 
-To remove them, run:
+- Docker
 
-```shell
-kubectl delete -f k8s-specifications/
+- microk8s (Kubernetes)
+
+- Enables dns, storage, ingress addons
+
+### Phase 4 — Kubernetes Manifests
+
+```bash
+
+# Copy manifests to EC2
+
+scp -i ~/.ssh/devops-key.pem kubernetes/*.yaml ubuntu@<EC2-IP>:~/
+
+# SSH and apply
+
+ssh -i ~/.ssh/devops-key.pem ubuntu@<EC2-IP>
+
+sudo microk8s kubectl apply -f ~/
+
+sudo microk8s kubectl get pods
+
 ```
 
-## Architecture
+### Phase 5 — CI/CD Pipeline
 
-![Architecture diagram](architecture.excalidraw.png)
+#### GitHub Actions (CI)
 
-* A front-end web app in [Python](/vote) which lets you vote between two options
-* A [Redis](https://hub.docker.com/_/redis/) which collects new votes
-* A [.NET](/worker/) worker which consumes votes and stores them in…
-* A [Postgres](https://hub.docker.com/_/postgres/) database backed by a Docker volume
-* A [Node.js](/result) web app which shows the results of the voting in real time
+Triggers automatically on every push to main branch:
 
-## Notes
+1. **Security Scan** — Trivy filesystem scan + OWASP dependency check
 
-The voting application only accepts one vote per client browser. It does not register additional votes if a vote has already been submitted from a client.
+2. **Build Vote Image** — Docker build + push + Trivy image scan
 
-This isn't an example of a properly architected perfectly designed distributed app... it's just a simple
-example of the various types of pieces and languages you might see (queues, persistent data, etc), and how to
-deal with them in Docker at a basic level.
+3. **Build Result Image** — Docker build + push + Trivy image scan  
+
+4. **Build Worker Image** — Docker build + push + Trivy image scan
+
+5. **Update Manifests** — Updates image tags in kubernetes/ folder
+
+Required GitHub Secrets:
+
+- `DOCKERHUB_USERNAME` — Docker Hub username
+
+- `DOCKERHUB_TOKEN` — Docker Hub access token (Read & Write)
+
+#### ArgoCD (CD)
+
+```bash
+
+# On EC2 — download and install ArgoCD
+
+curl -L -o argo.yaml https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+
+sudo microk8s kubectl create namespace argocd
+
+sudo microk8s kubectl apply -n argocd -f argo.yaml --request-timeout=300s
+
+# Expose ArgoCD UI
+
+sudo microk8s kubectl patch svc argocd-server -n argocd \
+
+  -p '{"spec":{"type":"NodePort","ports":[{"port":80,"targetPort":8080,"nodePort":30080,"protocol":"TCP","name":"http"}]}}'
+
+# Apply voting app to ArgoCD
+
+sudo microk8s kubectl apply -f argocd/application.yaml
+
+# Get admin password
+
+sudo microk8s kubectl -n argocd get secret argocd-initial-admin-secret \
+
+  -o jsonpath="{.data.password}" | base64 -d
+
+```
+
+Access ArgoCD UI: `http://<EC2-IP>:30080`
+
+- Username: `admin`
+
+- Password: from command above
+
+ArgoCD auto-syncs kubernetes/ folder from GitHub on every commit.
+
+## Security Tools
+
+| Tool | Stage | Purpose |
+
+|------|-------|---------|
+
+| Trivy | CI | Container image + filesystem vulnerability scanning |
+
+| OWASP Dependency Check | CI | Known CVE scanning in dependencies |
+
+| GitHub Actions Gates | CI | Blocks deployment if critical vulnerabilities found |
+
+## Application Access
+
+After deployment:
+
+- **Vote App**: `http://<EC2-IP>:31000`
+
+- **Result App**: `http://<EC2-IP>:31001`
+
+- **ArgoCD UI**: `http://<EC2-IP>:30080`
+
+## Infrastructure Notes
+
+> The project uses AWS free tier (t3.micro, 1GB RAM). microk8s requires
+
+> minimum 2GB RAM for stable operation with ArgoCD. A 2GB swap file
+
+> is added to compensate for memory constraints.
+
+## Cleanup — Important!
+
+```bash
+
+# Destroy all AWS resources to avoid charges
+
+cd terraform/
+
+terraform destroy
+
+```
+
