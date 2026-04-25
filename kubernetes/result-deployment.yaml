@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
       - name: result
-        image: 22i1269xx/result:latest
+        image: 22i1269xx/result:24d60006960c84f28277c9eda1caa209fb65fc5a
         ports:
         - containerPort: 80
         env:
