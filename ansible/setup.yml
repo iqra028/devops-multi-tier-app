@@ -1,0 +1,102 @@
+---
+- name: Configure EC2 and install microk8s
+  hosts: voting_app
+  become: true
+  gather_facts: true
+
+  tasks:
+
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Install required packages
+      apt:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - gnupg
+          - lsb-release
+          - snapd
+          - git
+          - python3-pip
+        state: present
+
+    - name: Install Docker
+      apt:
+        name: docker.io
+        state: present
+
+    - name: Start and enable Docker
+      systemd:
+        name: docker
+        enabled: yes
+        state: started
+
+    - name: Add ubuntu user to docker group
+      user:
+        name: ubuntu
+        groups: docker
+        append: yes
+
+    - name: Install microk8s via snap
+      community.general.snap:
+        name: microk8s
+        classic: yes
+        channel: 1.28/stable
+
+    - name: Add ubuntu user to microk8s group
+      user:
+        name: ubuntu
+        groups: microk8s
+        append: yes
+
+    - name: Wait for microk8s to be ready
+      command: microk8s status --wait-ready
+      timeout: 180
+
+    - name: Enable microk8s addons
+      command: microk8s enable dns storage registry ingress
+      timeout: 180
+
+    - name: Create .kube directory for ubuntu user
+      file:
+        path: /home/ubuntu/.kube
+        state: directory
+        owner: ubuntu
+        group: ubuntu
+        mode: '0755'
+
+    - name: Export kubeconfig
+      shell: microk8s config > /home/ubuntu/.kube/config
+      args:
+        creates: /home/ubuntu/.kube/config
+
+    - name: Set kubeconfig ownership
+      file:
+        path: /home/ubuntu/.kube/config
+        owner: ubuntu
+        group: ubuntu
+        mode: '0600'
+
+    - name: Create kubectl alias
+      lineinfile:
+        path: /home/ubuntu/.bashrc
+        line: 'alias kubectl="microk8s kubectl"'
+        state: present
+
+    - name: Install ArgoCD namespace
+      command: microk8s kubectl create namespace argocd
+      ignore_errors: yes
+
+    - name: Install ArgoCD
+      command: microk8s kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+      timeout: 120
+
+    - name: Patch ArgoCD server service to NodePort
+      command: >
+        microk8s kubectl patch svc argocd-server -n argocd
+        -p '{"spec":{"type":"NodePort","ports":[{"port":443,"targetPort":8080,"nodePort":30080}]}}'
+      ignore_errors: yes
