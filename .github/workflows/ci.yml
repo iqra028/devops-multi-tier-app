@@ -1,0 +1,161 @@
+name: CI - Build and Push Docker Images
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  DOCKERHUB_USERNAME: 22i1269xx
+
+jobs:
+  security-scan:
+    name: Security Scanning
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Run Trivy vulnerability scanner on repo
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'table'
+          exit-code: '0'
+          severity: 'CRITICAL,HIGH'
+
+      - name: OWASP Dependency Check
+        uses: dependency-check/Dependency-Check_Action@main
+        with:
+          project: 'voting-app'
+          path: '.'
+          format: 'HTML'
+          out: 'reports'
+          args: >
+            --enableRetired
+        continue-on-error: true
+
+      - name: Upload OWASP report
+        uses: actions/upload-artifact@v3
+        with:
+          name: owasp-report
+          path: reports/
+
+  build-vote:
+    name: Build Vote Image
+    runs-on: ubuntu-latest
+    needs: security-scan
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push vote image
+        uses: docker/build-push-action@v4
+        with:
+          context: ./vote
+          push: true
+          tags: |
+            ${{ env.DOCKERHUB_USERNAME }}/vote:latest
+            ${{ env.DOCKERHUB_USERNAME }}/vote:${{ github.sha }}
+
+      - name: Trivy scan vote image
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: '${{ env.DOCKERHUB_USERNAME }}/vote:latest'
+          format: 'table'
+          exit-code: '0'
+          severity: 'CRITICAL,HIGH'
+
+  build-result:
+    name: Build Result Image
+    runs-on: ubuntu-latest
+    needs: security-scan
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push result image
+        uses: docker/build-push-action@v4
+        with:
+          context: ./result
+          push: true
+          tags: |
+            ${{ env.DOCKERHUB_USERNAME }}/result:latest
+            ${{ env.DOCKERHUB_USERNAME }}/result:${{ github.sha }}
+
+      - name: Trivy scan result image
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: '${{ env.DOCKERHUB_USERNAME }}/result:latest'
+          format: 'table'
+          exit-code: '0'
+          severity: 'CRITICAL,HIGH'
+
+  build-worker:
+    name: Build Worker Image
+    runs-on: ubuntu-latest
+    needs: security-scan
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push worker image
+        uses: docker/build-push-action@v4
+        with:
+          context: ./worker
+          push: true
+          tags: |
+            ${{ env.DOCKERHUB_USERNAME }}/worker:latest
+            ${{ env.DOCKERHUB_USERNAME }}/worker:${{ github.sha }}
+
+      - name: Trivy scan worker image
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: '${{ env.DOCKERHUB_USERNAME }}/worker:latest'
+          format: 'table'
+          exit-code: '0'
+          severity: 'CRITICAL,HIGH'
+
+  update-manifests:
+    name: Update K8s Manifests
+    runs-on: ubuntu-latest
+    needs: [build-vote, build-result, build-worker]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update image tags in manifests
+        run: |
+          sed -i "s|22i1269xx/vote:.*|22i1269xx/vote:${{ github.sha }}|g" kubernetes/vote-deployment.yaml
+          sed -i "s|22i1269xx/result:.*|22i1269xx/result:${{ github.sha }}|g" kubernetes/result-deployment.yaml
+          sed -i "s|22i1269xx/worker:.*|22i1269xx/worker:${{ github.sha }}|g" kubernetes/worker-deployment.yaml
+
+      - name: Commit and push updated manifests
+        run: |
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git add kubernetes/
+          git diff --staged --quiet || git commit -m "CI: update image tags to ${{ github.sha }}"
+          git push
